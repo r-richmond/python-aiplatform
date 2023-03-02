@@ -4656,6 +4656,110 @@ class Model(base.VertexAiResourceNounWithFutureManager):
             upload_request_timeout=upload_request_timeout,
         )
 
+    @classmethod
+    @base.optional_sync()
+    def copy(
+        cls,
+        source_model: str,
+        model_id: Optional[str] = None,
+        parent_model: Optional[str] = None,
+        encryption_spec_key_name: Optional[str] = None,
+        sync=True,
+        copy_request_timeout: Optional[float] = None,
+    ) -> "Model":
+        """Copys a model and returns a Model representing the copied Model
+        resource.
+
+        Example usage:
+            my_model = Model.copy(
+                source_model="projects/123/locations/us-central1/models/456@1",
+            )
+
+        Args:
+            source_model (str):
+                The resource name of an existing model to copy from.
+            model_id (str):
+                Optional. The ID to use for the copied Model, which will
+                become the final component of the model resource name.
+                This value may be up to 63 characters, and valid characters
+                are `[a-z0-9_-]`. The first character cannot be a number or hyphen.
+
+                Only set this field when copying as a new model.
+            parent_model (str):
+                Optional. The resource name or model ID of an existing model that the
+                newly-copied model will be a version of.
+
+                Only set this field when copying as a new version of an existing model.
+            encryption_spec_key_name (Optional[str]):
+                Optional. The Cloud KMS resource identifier of the customer
+                managed encryption key used to protect the model. Has the
+                form:
+                ``projects/my-project/locations/my-region/keyRings/my-kr/cryptoKeys/my-key``.
+                The key needs to be in the same region as where the compute
+                resource is created.
+
+                If set, this Model and all sub-resources of this Model will be secured by this key.
+
+                Overrides encryption_spec_key_name set in aiplatform.init.
+            copy_request_timeout (float):
+                Optional. The timeout for the copy request in seconds.
+
+        Returns:
+            model (aiplatform.Model):
+                Instantiated representation of the copied model resource.
+
+        Raises:
+            ValueError: If both `model_id` and `parent_model` are set.
+        """
+        appended_user_agent = None
+
+        encryption_spec = initializer.global_config.get_encryption_spec(
+            encryption_spec_key_name=encryption_spec_key_name,
+        )
+
+        if model_id is not None and parent_model is not None:
+            raise ValueError("`model_id` and `parent_model` can not be set together.")
+
+        parent = initializer.global_config.common_location_path()
+
+        if model_id is not None:
+            request = gca_model_service_compat.CopyModelRequest(
+                parent=parent,
+                source_model=source_model,
+                model_id=model_id,
+                encryption_spec=encryption_spec,
+            )
+        else:
+            request = gca_model_service_compat.CopyModelRequest(
+                parent=parent,
+                source_model=source_model,
+                parent_model=parent_model,
+                encryption_spec=encryption_spec,
+            )
+
+        api_client = cls._instantiate_client(
+            initializer.global_config.location,
+            initializer.global_config.credentials,
+            appended_user_agent=appended_user_agent,
+        )
+
+        lro = api_client.copy_model(
+            request=request,
+            timeout=copy_request_timeout,
+        )
+
+        _LOGGER.log_create_with_lro(cls, lro)
+
+        model_copy_response = lro.result()
+
+        this_model = cls(
+            model_copy_response.model, version=model_copy_response.model_version_id
+        )
+
+        _LOGGER.log_create_complete(cls, this_model._gca_resource, "model")
+
+        return this_model
+
     def list_model_evaluations(
         self,
     ) -> List["model_evaluation.ModelEvaluation"]:
